@@ -1,0 +1,372 @@
+#!/bin/bash
+
+# Firefox-Tor script made by BuriXon-code (c) 2024
+# version 1.0
+
+# VARIABLES
+FFOX_DIR="$HOME/.ffox"
+PID_FILE="$FFOX_DIR/pids"
+TOR_LOG="$FFOX_DIR/tor_logs_$(date +'%Y-%m-%d--%H-%M-%S').log"
+FIREFOX_LOG="$FFOX_DIR/firefox_logs_$(date +'%Y-%m-%d--%H-%M-%S').log"
+
+# COLORS
+RESET="\033[0m"
+GREEN="\033[32m"
+RED="\033[31m"
+LIGHT_BLUE="\033[38;5;81m"
+PINK="\033[38;5;207m"
+YELLOW="\033[38;5;226m"
+ORANGE="\033[38;2;255;160;0m"
+LIGHT_ORANGE="\033[38;2;255;250;190m"
+
+# LOG/LOCK DIR
+mkdir -p "$FFOX_DIR"
+touch "$PID_FILE"
+
+# FUNCTIONS
+print_info() {
+        echo -e "${GREEN}[ INFO ]${RESET} $1"
+}
+
+print_error() {
+        echo -e "${RED}[ ERROR ]${RESET} $1" >&2
+        echo
+        exit 1
+}
+
+print_tor() {
+        echo -e "${PINK}[ TOR ]${RESET} $1"
+}
+
+print_logs() {
+        echo -e "${YELLOW}[ LOGS ]${RESET} $1"
+}
+
+print_firefox() {
+        echo -e "${LIGHT_BLUE}[ FIREFOX ]${RESET} $1"
+}
+
+check_port() {
+        nc -z localhost 9050 &>/dev/null
+        if [[ $? -eq 0 ]]; then
+                print_info "Port 9050 is open."
+                return 0
+        else
+                print_info "Port 9050 is closed."
+                return 1
+        fi
+}
+
+start_tor() {
+        if ! check_port; then
+                print_tor "Starting Tor..."
+                pkill -f "tor" &>/dev/null
+                tor &>"$TOR_LOG" &
+                echo $! >>"$PID_FILE"
+                sleep 3
+                if check_port; then
+                        print_tor "Tor started successfully. PID: $!"
+                else
+                        print_error "Failed to start Tor. Port 9050 is still closed."
+                fi
+        else
+                print_tor "Tor is already running."
+        fi
+}
+
+start_firefox() {
+        TMP_PROFILE=$(mktemp -d)
+        PREFS_FILE="$TMP_PROFILE/prefs.js"
+
+        print_firefox "Launching Firefox with a temporary profile."
+        firefox --no-remote --profile "$TMP_PROFILE" &>"$FIREFOX_LOG" &
+        local PID=$!
+        echo "$PID" >>"$PID_FILE"
+        print_firefox "Firefox started. PID: $PID"
+
+        cat <<EOF >"$PREFS_FILE"
+user_pref("network.proxy.socks", "127.0.0.1");
+user_pref("network.proxy.socks_port", 9050);
+user_pref("network.proxy.type", 1);
+user_pref("general.useragent.override", "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/420.0");
+user_pref("general.oscpu.override", "Windows NT 10.0");
+user_pref("general.platform.override", "Win32");
+user_pref("browser.startup.homepage", "https://duckduckgo.com/");
+user_pref("browser.search.defaultenginename", "DuckDuckGo");
+user_pref("browser.search.selectedEngine", "DuckDuckGo");
+user_pref("browser.urlbar.placeholderName", "DuckDuckGo");
+user_pref("browser.urlbar.placeholderName.private", "DuckDuckGo");
+user_pref("keyword.url", "https://duckduckgo.com/?q=");
+user_pref("browser.newtabpage.pinned", "[{\"url\":\"https://duckduckgo.com\",\"label\":\"@duck\",\"searchTopSite\":true},{\"url\":\"https://google.com\",\"label\":\"@google\",\"searchTopSite\":true}]");
+EOF
+
+}
+
+list_pids() {
+        if [[ ! -s "$PID_FILE" ]]; then
+                print_info "No running instances found."
+        else
+                print_info "List of running PIDs:"
+                cat "$PID_FILE"
+        fi
+}
+
+kill_pids() {
+        local OPTION=$1
+
+        if [[ "$OPTION" == "all" ]]; then
+                print_firefox "Stopping all Firefox instances."
+                while read -r PID; do
+                        kill "$PID" &>/dev/null
+                done <"$PID_FILE"
+                rm -f "$PID_FILE"
+                pkill -f "tor" &>/dev/null
+                print_tor "Tor process stopped."
+        else
+                if grep -q "^$OPTION$" "$PID_FILE"; then
+                        print_firefox "Stopping Firefox instance with PID: $OPTION."
+                        kill "$OPTION" &>/dev/null
+                        sed -i "/^$OPTION$/d" "$PID_FILE"
+
+                        if [[ ! -s "$PID_FILE" ]]; then
+                                print_tor "No running instances left. Stopping Tor."
+                                pkill -f "tor" &>/dev/null
+                        fi
+                else
+                        print_error "Invalid PID: $OPTION. PID is not in the list of managed processes."
+                fi
+        fi
+}
+
+# LOGS FUNCTION
+list_logs() {
+        LOG_FILES=($(ls -1tr "$FFOX_DIR"/*_logs_* 2>/dev/null))
+
+        if [[ ${#LOG_FILES[@]} -eq 0 ]]; then
+                print_logs "No log files found."
+        else
+                print_logs "Available log files:"
+		echo
+
+                for i in "${!LOG_FILES[@]}"; do
+                        echo -e "\e[38;5;208m$((i+1)).\e[0m $(basename ${LOG_FILES[$i]})"
+                done
+		echo
+
+                print_logs "Enter log number to view:"
+                echo -e -n "\e[38;5;45m"
+		read -r LOG_CHOICE
+		if [[ ! "$LOG_CHOICE" =~ ^[0-9]+$ ]]; then
+			echo
+			print_error "The value '$LOG_CHOICE' is not a valid log number."
+		fi
+		echo -e -n "\e[0m"
+
+                if [[ "$LOG_CHOICE" -gt 0 && "$LOG_CHOICE" -le "${#LOG_FILES[@]}" ]]; then
+			less "${LOG_FILES[$((LOG_CHOICE-1))]}"
+                else
+			echo
+                        print_error "Invalid log number."
+                fi
+        fi
+}
+clean_logs() {
+    if [[ "$1" == "all" ]]; then
+        print_info "Cleaning all log files..."
+        rm -f "$FFOX_DIR"/*_logs_* &>/dev/null
+        print_info "All log files have been removed."
+    elif [[ "$1" =~ ^[0-9]+$ ]]; then
+        local DAYS=$1
+        print_info "Cleaning logs older than $DAYS days..."
+
+        local THRESHOLD_DATE
+        THRESHOLD_DATE=$(date --date="$DAYS days ago" +%s)
+
+        for LOG_FILE in "$FFOX_DIR"/*_logs_*; do
+            if [[ -f "$LOG_FILE" ]]; then
+
+                local FILE_MODIFIED_DATE
+                FILE_MODIFIED_DATE=$(stat --format="%Y" "$LOG_FILE")
+
+                if [[ "$FILE_MODIFIED_DATE" -lt "$THRESHOLD_DATE" ]]; then
+                    shred -zxu "$LOG_FILE"
+                    print_info "Removed log file: $(basename "$LOG_FILE")"
+                fi
+            fi
+        done
+    else
+        print_error "Invalid argument for -clean. Usage: -clean <days|all>"
+    fi
+}
+
+
+check_tor_status() {
+        if check_port; then
+                print_tor "Tor is running."
+        else
+                print_tor "Tor is not running."
+        fi
+}
+
+check_ip() {
+        if ! command -v curl &>/dev/null; then
+                print_error "Package 'curl' is required to check IP."
+        fi
+
+        local IP=$(curl -s --socks5 127.0.0.1:9050 https://check.torproject.org/api/ip | jq -r '.IP')
+        if [[ -z $IP ]]; then
+                print_error "Failed to fetch IP. Is Tor running?"
+        else
+                print_info "Your current Tor IP is: $IP"
+        fi
+}
+
+new_identity() {
+	print_tor "Forcing new identity in Tor..."
+
+	if ! nc -zv localhost 9051 &>/dev/null; then
+		print_error "Control port 9051 is not open. Make sure Tor is running and ControlPort is enabled in torrc."
+	fi
+
+	echo -e "AUTHENTICATE\nSIGNAL NEWNYM\nQUIT" | nc -C localhost 9051 &>/dev/null
+
+	if [[ $? -eq 0 ]]; then
+		print_tor "New identity successfully forced."
+	else
+		print_error "Failed to force new identity."
+	fi
+}
+
+# Zmienne kolorów
+ORANGE="\033[38;2;255;160;0m"
+LIGHT_ORANGE="\033[38;2;255;250;190m"
+RESET="\033[0m"
+
+show_help() {
+    echo -e "\n${ORANGE}[ HELP ]${RESET} This script helps you to manage Tor and Firefox instances."
+
+    echo
+    echo -e "${ORANGE}[ USAGE ]${RESET} $(basename $0) {-new | -list | -kill <all|PID> | -logs | -status | -identity | -ip | -clean <days|all>}"
+    echo
+    echo -e "${ORANGE}[ OPTIONS ]${RESET}"
+    echo -e "  ${LIGHT_ORANGE}-new${RESET}              Start a new Tor instance and Firefox with a temporary profile."
+    echo -e "  ${LIGHT_ORANGE}-list${RESET}             List the running PID of Firefox instances."
+    echo -e "  ${LIGHT_ORANGE}-kill <PID|all>${RESET}   Kill the Firefox instance with the specified PID or all running instances."
+    echo -e "  ${LIGHT_ORANGE}-logs${RESET}             View or list available logs."
+    echo -e "  ${LIGHT_ORANGE}-status${RESET}           Check the status of the Tor instance."
+    echo -e "  ${LIGHT_ORANGE}-identity${RESET}         Request a new Tor identity."
+    echo -e "  ${LIGHT_ORANGE}-ip${RESET}               Show the current public IP address as seen by Tor."
+    echo -e "  ${LIGHT_ORANGE}-clean <days|all>${RESET} Clean up old logs. Default is 7 days. Use 'all' to remove all logs."
+    echo
+
+    echo -e "${ORANGE}[ EXAMPLES ]${RESET}"
+    echo -e "  ${LIGHT_ORANGE}$(basename $0) -new${RESET}         Start a new Tor and Firefox instance."
+    echo -e "  ${LIGHT_ORANGE}$(basename $0) -kill all${RESET}    Stop all running Firefox instances."
+    echo -e "  ${LIGHT_ORANGE}$(basename $0) -logs${RESET}        View the logs."
+    echo -e "  ${LIGHT_ORANGE}$(basename $0) -clean 7${RESET}     Clean logs older than 7 days."
+}
+
+check_collision() {
+	local vars=$1
+	local requ=$2
+
+	if [[ $vars -gt $requ ]]; then
+		show_help
+		echo
+		print_error "to many args wtf xd"
+	fi
+}
+
+# LOGIC
+case $1 in
+        -new)
+		check_collision $# 1
+
+                if [[ -z $DISPLAY ]]; then
+                        echo
+                        print_error "Cannot open display. Are you running desktop?"
+                fi
+
+		if ! command -v tor &>/dev/null; then
+			echo
+			print_error "Package 'tor' is not installed."
+		fi
+
+		if ! command -v firefox &>/dev/null; then
+			echo
+			print_error "Package 'firefox' is not installed."
+		fi
+
+		if ! command -v nc &>/dev/null; then
+			print_error "Package 'netcat' is not installed."
+		fi
+
+		echo
+                start_tor
+                start_firefox
+                echo
+                ;;
+        -list)
+                check_collision $# 1
+
+                echo
+                list_pids
+                echo
+                ;;
+        -clean)
+                check_collision $# 2
+
+		echo
+                clean_logs "$2"
+		echo
+                ;;
+        -status)
+                check_collision $# 1
+
+		echo
+                check_tor_status
+		echo
+                ;;
+        -ip)
+                check_collision $# 1
+
+		echo
+                check_ip
+		echo
+                ;;
+        -kill)
+                check_collision $# 2
+
+                echo
+                if [[ -z $2 ]]; then
+                        print_error "Specify 'all' or a PID."
+                else
+                        kill_pids "$2"
+                fi
+                echo
+                ;;
+        -logs)
+                check_collision $# 1
+
+                echo
+                list_logs
+                echo
+                ;;
+	-identity)
+		check_collision $# 1
+
+		echo
+		new_identity
+		echo
+		;;
+	-help)
+		show_help
+		echo
+		;;
+        *)
+		show_help
+                echo
+                print_error "Usage: $(basename $0) {-new | -list | -kill <all|PID> | -logs | -ip | -status | -clean <days|all>}"
+                echo
+                ;;
+esac
