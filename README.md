@@ -221,20 +221,17 @@ The script was tested in Termux **0.118** and **0.119** on various VNC ports.
 
 No significant errors in the script were noticed.
 
-## Support ...
+## Support
+### Contact me:
+For any issues, suggestions, or questions, reach out via:
 
-### Contact me :
+- *Email:* support@burixon.dev  
+- *Contact form:* [Click here](https://burixon.dev/contact/)
+- *Bug reports:* [Click here](https://burixon.dev/bugreport/#FireTor)
 
-In case of any problems, irregularities, suggestions and questions, please contact me:
+### Support me:
+If you find this script useful, consider supporting my work by making a donation:
 
-+ Email : **support@burixon.com.pl**
+[**Donations**](https://burixon.dev/donate/)
 
-+ Contact form : **[click here](https://burixon.com.pl/kontakt.php)**
-
-### Support me : 
-
-I write useful and simple life tools to make life easier. If you consider this script and the others to be useful and helpful, you can let me know about it by making a tip on my website: **[DONATIONS](https://burixon.com.pl/donate/)**.
-
-This should help me in further development, creating new projects, scripts and programs.
-
-The Termux and Linux environment is created by users. Your contribution to my work can help us develop them all!
+Your contributions help in developing new projects and improving existing tools!
